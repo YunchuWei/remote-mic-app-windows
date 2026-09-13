@@ -213,6 +213,7 @@ describe("hold-to-talk hotkey presets and custom capture", () => {
   }
 
   beforeEach(() => {
+    localStorage.clear();
     mocks.getConnectionSnapshot.mockResolvedValue(emptyConnection);
     mocks.getAudioSnapshot.mockResolvedValue(emptyAudio);
     mocks.listAudioEndpoints.mockResolvedValue([]);
@@ -308,5 +309,46 @@ describe("hold-to-talk hotkey presets and custom capture", () => {
     expect(mocks.setVoiceHoldHotkey).toHaveBeenCalledWith({ keys: ["left_windows", "h"] });
     expect(mocks.stopShortcutCapture).toHaveBeenCalled();
     wrapper.unmount();
+  });
+
+  it("keeps the captured custom hotkey as a clickable preset for switching back", async () => {
+    const wrapper = mount(ConnectionPage, { props: { runtime } });
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("自定义：F9");
+
+    await wrapper.get(".custom-shortcut-row .chip").trigger("click");
+    await flushPromises();
+    pressKey("F9");
+    releaseKey("F9");
+    await flushPromises();
+
+    const presetButtons = () => wrapper.findAll(".voice-hotkey-presets button");
+    const customButton = presetButtons().find((button) => button.text() === "自定义：F9");
+    expect(customButton).toBeTruthy();
+    // 刚录入的自定义组合处于激活态（主按钮样式），且不可重复点击。
+    expect(customButton!.classes()).toContain("primary-button");
+    expect(customButton!.attributes("disabled")).toBeDefined();
+
+    // 切到「关闭」后，自定义按钮可一键切回，无需重新录入。
+    const off = presetButtons().find((button) => button.text() === "关闭");
+    await off!.trigger("click");
+    await flushPromises();
+    expect(mocks.setVoiceHoldHotkey).toHaveBeenLastCalledWith(null);
+    expect(customButton!.classes()).not.toContain("primary-button");
+
+    await customButton!.trigger("click");
+    await flushPromises();
+    expect(mocks.setVoiceHoldHotkey).toHaveBeenLastCalledWith({ keys: ["f9"] });
+    wrapper.unmount();
+  });
+
+  it("persists the custom hotkey preset across page remounts", async () => {
+    localStorage.setItem("sayall.customVoiceHotkey", JSON.stringify(["left_windows", "h"]));
+    const wrapper = mount(ConnectionPage, { props: { runtime } });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("自定义：左 Win + H");
+    wrapper.unmount();
+    localStorage.removeItem("sayall.customVoiceHotkey");
   });
 });

@@ -116,6 +116,38 @@ async function refreshVoiceHotkey() {
   }
 }
 
+// 最近一次自定义录入的组合：作为可点击的第四个预设，免得每次切换都要重新录入。
+const CUSTOM_VOICE_HOTKEY_KEY = "sayall.customVoiceHotkey";
+
+function loadCustomVoiceHotkey(): string[] | null {
+  try {
+    const raw = localStorage.getItem(CUSTOM_VOICE_HOTKEY_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      !Array.isArray(parsed) ||
+      parsed.length === 0 ||
+      !parsed.every((key) => typeof key === "string")
+    ) {
+      return null;
+    }
+    return parsed as string[];
+  } catch {
+    return null;
+  }
+}
+
+const customVoiceHotkey = ref<string[] | null>(loadCustomVoiceHotkey());
+
+function persistCustomVoiceHotkey(keys: string[]): void {
+  customVoiceHotkey.value = [...keys];
+  try {
+    localStorage.setItem(CUSTOM_VOICE_HOTKEY_KEY, JSON.stringify(keys));
+  } catch {
+    // localStorage 不可用时静默降级：本次会话内按钮仍可用。
+  }
+}
+
 // —— 自定义快捷键录入：与「按键映射」页同一套捕获机制（原生钩子 + 前端双源）。 ——
 
 /** KeyboardEvent.code → KeyCode（serde snake_case）。 */
@@ -260,6 +292,7 @@ function acceptCapturedKey(code: KeyCode, isPressed: boolean, repeat = false): v
       if (capturePressedKeys.size === 0) {
         const keys = capturedChord;
         void finishHotkeyCapture();
+        persistCustomVoiceHotkey(keys);
         void applyVoiceHotkey(keys);
       }
     } else {
@@ -648,6 +681,15 @@ onUnmounted(() => {
             @click="applyVoiceHotkey(preset.keys)"
           >
             {{ preset.label }}
+          </button>
+          <button
+            v-if="customVoiceHotkey?.length"
+            :class="presetIsActive(customVoiceHotkey) ? 'primary-button' : 'secondary-button'"
+            type="button"
+            :disabled="savingVoiceHotkey || !runtime?.platform.windowsApiAvailable || presetIsActive(customVoiceHotkey)"
+            @click="applyVoiceHotkey(customVoiceHotkey)"
+          >
+            自定义：{{ chordLabel({ keys: customVoiceHotkey }) }}
           </button>
         </div>
         <div class="custom-shortcut-row">
